@@ -10,6 +10,9 @@ dependencies = [
     "pydantic>=2.12.5",
     "pyrogram>=2.0.106",
     "python-dotenv>=1.2.1",
+    "mysql-connector-python>=9.5.0",
+    "mysql>=0.0.3",
     "telethon>=1.42.0",
     "tgcrypto>=1.2.5",
+
 ]

@@ -10,13 +10,13 @@ from telethon.tl.functions.channels import InviteToChannelRequest
 from telethon.tl.types import Message, User
 
 from app.utils.logger import ColorLogger
-from app.utils.models import UserExportData
+from app.utils.models import UserExportData, dbUser 
 
 # Inicializa o logger para a classe
 logger = ColorLogger("Scraper")
 
 
-class TelegramManger:
+class TelegramManeger:
     def __init__(self, api_id: int, api_hash: str, phone_number: str, group_id: int):
         self.api_id = api_id
         self.api_hash = api_hash
@@ -64,22 +64,22 @@ class TelegramManger:
         await self.client.disconnect()
         logger.info("[SYSTEM] Cliente Telethon desconectado. 👋")
 
-    def _extract_user_data(self, user: User) -> UserExportData:
+    def _extract_user_data(self, user: User) -> dbUser:
         """Extrai e formata as informações necessárias de um objeto User (Telethon)."""
-        return {
-            "id": user.id,
-            "username": user.username if user.username else None,
-            "first_name": user.first_name if user.first_name else None,
-            "last_name": user.last_name if user.last_name else None,
-            "is_bot": user.bot,
-        }
+        return dbUser(
+            id=user.id,
+            username=user.username if user.username else None,
+            first_name=user.first_name if user.first_name else None,
+            last_name=user.last_name if user.last_name else None,
+            is_bot=user.bot,
+        )
 
-    async def get_last_100_users(self) -> List[UserExportData]:
+    async def get_last_100_users(self) -> List[dbUser]:
         """
         Busca as últimas 100 mensagens usando Telethon, coleta usuários
         e obedece o limite FLOOD_WAIT (FloodWaitError).
         """
-        unique_users: Dict[int, UserExportData] = {}
+        unique_users: Dict[int, dbUser] = {}
         limit = 100
 
         logger.info(f"Buscando as últimas {limit} mensagens com Telethon...")
@@ -119,23 +119,26 @@ class TelegramManger:
 
         return list(unique_users.values())
 
-    async def add_users_to_group(self, target_group_id: int):
+    async def get_group_members(self, group_id_int: int) -> List[dbUser]:
+        """
+        Busca os membros do grupo de origem e retorna uma lista de IDs de usuários.
+        """
+        try:
+            # Obtem a lista de usuários do grupo de origem
+            users = await self.client.get_participants(group_id_int)
+            logger.info(f"Total de usuários encontrados: {len(users)}") 
+            return [self._extract_user_data(user) for user in users]
+        except Exception as e:
+            logger.critical(f"Erro ao buscar membros do grupo: {e}")
+            return []   
+
+    async def add_user_to_group(self, users_to_add: List[int], target_group_id: int):
         """
         Lê o cache de usuários e tenta adicionar cada um ao grupo de destino,
         respeitando os limites de FLOOD_WAIT.
         """
 
-        # 1. Carregar o cache (supondo que save_users_cache já foi chamado)
-        try:
-            with open(self.cache_file, "r", encoding="utf-8") as f:
-                users_to_add: List[UserExportData] = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            logger.critical(
-                f"Cache de usuários não encontrado ou corrompido: {self.cache_file}. Abortando adição."
-            )
-            return
-
-        safe_users_to_add = users_to_add[:8]
+        safe_users_to_add = users_to_add[:8] if len(users_to_add) > 8 else users_to_add
 
         logger.info(
             f"Tentando adicionar {len(safe_users_to_add)} usuários ao grupo ID: {target_group_id}"
@@ -149,7 +152,7 @@ class TelegramManger:
             try:
                 result = await self.client(
                     InviteToChannelRequest(
-                        channel=int(target_group_id), users=[user.get("id")]
+                        channel=int(target_group_id), users=[user]
                     )
                 )
                 logger.info(
@@ -175,7 +178,7 @@ class TelegramManger:
             except Exception as e:
                 wait_time = 300  # 5 minutos para erros persistentes no lote
                 logger.critical(
-                    f"Erro INESPERADO ao adicionar o {user.get('username')}: {e}. Aguardando {wait_time}s."
+                    f"Erro INESPERADO ao adicionar o {user}: {e}. Aguardando {wait_time}s."
                 )
                 await asyncio.sleep(wait_time)
 
