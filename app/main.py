@@ -10,7 +10,7 @@ from app.src.api import TelegramManeger
 from app.utils.cache import save_users_cache
 from app.utils.db_manager import TelegramDatabase
 from app.utils.logger import ColorLogger
-from app.utils.models import UserExportData, Users
+from app.utils.models import UserExportData, dbUser
 
 load_dotenv()
 
@@ -32,7 +32,7 @@ DATABASE = os.getenv("DB_NAME")
 
 logger = ColorLogger("Main")
 if HOST and USER and PASSWORD and DATABASE:
-    db = TelegramDatabase(host=HOST,user=USER,password=PASSWORD,database=DATABASE)
+    db = TelegramDatabase(host=HOST, user=USER, password=PASSWORD, database=DATABASE)
 else:
     db = None
     logger.warning("Database não setada no env inciando sessão temporaria")
@@ -48,8 +48,7 @@ LOGO = """
 """
 
 
-
-async def with_db():
+async def add():
     print(LOGO)  # O logo é impresso no logger, não no print.
     logger.info("Starting Telegram Scraper")
     connector = TelegramManeger(API_ID, API_HASH, PHONE_NUMBER, GROUP_ID)
@@ -62,10 +61,8 @@ async def with_db():
                 "Por favor, configure as variáveis de ambiente: TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_PHONE_NUMBER, TELEGRAM_GROUP_ID e TELEGRAM_TARGET_GROUP_ID."
             )
 
-        # A lógica de raspagem deve ser executada
         async with connector as scraper:
-            users_list: List[dbUser] = await scraper.get_group_members(group_id_int=int(GROUP_ID))    
-
+            users_list: List[dbUser] = await scraper.get_group_members(int(GROUP_ID))
             if users_list:
                 logger.info(
                     f"Busca finalizada. Total de {len(users_list)} usuários únicos prontos para exportação/adição."
@@ -74,11 +71,24 @@ async def with_db():
             if not users_list:
                 logger.warning("Nenhum usuário foi coletado.")
             for user in users_list:
-                await db.save_user(user=user)
-                await connector.add_user_to_group(users_to_add=[int(user.id)], target_group_id=int(TARGET_GROUP_ID))
+                logger.debug(int(user.id))
+                if await connector.add_user_to_contact(user_to_add=user.id):
+                    result = await connector.add_user_to_group(
+                        users_to_add=int(user.id),
+                        target_group_id=int(TARGET_GROUP_ID),
+                    )
+                    await db.check_users(user=user.id, succes=result)
+
+                    if result:
+                        wait_time = (
+                            300  # 1 minuto de pausa é mais seguro para convite em lote
+                        )
+                        logger.info("Aguardando 5 minutos após o convite em lote.")
+                        await asyncio.sleep(wait_time)
 
     except Exception as e:
         logger.critical(f"Falha na execução do scraper principal: {e}")
+
 
 async def without_db():
     print(LOGO)  # O logo é impresso no logger, não no print.
@@ -95,24 +105,16 @@ async def without_db():
 
         # A lógica de raspagem deve ser executada
         async with connector as scraper:
-            users_list: List[dbUser] = await scraper.get_group_members(group_id_int=int(GROUP_ID))    
+            users_list: List[dbUser] = await scraper.get_group_members(
+                group_id_int=int(GROUP_ID)
+            )
 
-            if users_list:
-                logger.info(
-                    f"Busca finalizada. Total de {len(users_list)} usuários únicos prontos para exportação/adição."
-                )
-
-            if not users_list:
-                logger.warning("Nenhum usuário foi coletado.")
+            logger.info("Adicionando usuarios ao banco de dados")
             for user in users_list:
-                await connector.add_user_to_group(users_to_add=[int(user.id)], target_group_id=int(TARGET_GROUP_ID))
-
+                await db.save_user(user)
     except Exception as e:
         logger.critical(f"Falha na execução do scraper principal: {e}")
 
 
 if __name__ == "__main__":
-    if db:  
-        asyncio.run(with_db())
-    else:
-        asyncio.run(without_db())
+    asyncio.run(add())

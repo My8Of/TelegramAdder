@@ -1,16 +1,20 @@
 import asyncio
 import json
 import os
-from syslog import LOG_SYSLOG
 from typing import Any, Dict, List
 
 from telethon import TelegramClient
-from telethon.errors import FloodWaitError, UserPrivacyRestrictedError
+from telethon.errors import (
+    FloodWaitError,
+    UserNotMutualContactError,
+    UserPrivacyRestrictedError,
+)
 from telethon.tl.functions.channels import InviteToChannelRequest
+from telethon.tl.functions.contacts import AddContactRequest
 from telethon.tl.types import Message, User
 
 from app.utils.logger import ColorLogger
-from app.utils.models import UserExportData, dbUser 
+from app.utils.models import UserExportData, dbUser
 
 # Inicializa o logger para a classe
 logger = ColorLogger("Scraper")
@@ -126,62 +130,81 @@ class TelegramManeger:
         try:
             # Obtem a lista de usuários do grupo de origem
             users = await self.client.get_participants(group_id_int)
-            logger.info(f"Total de usuários encontrados: {len(users)}") 
+            logger.info(f"Total de usuários encontrados: {len(users)}")
             return [self._extract_user_data(user) for user in users]
         except Exception as e:
             logger.critical(f"Erro ao buscar membros do grupo: {e}")
-            return []   
+            return []
 
-    async def add_user_to_group(self, users_to_add: List[int], target_group_id: int):
+    async def add_user_to_group(self, users_to_add: int, target_group_id: int) -> bool:
         """
         Lê o cache de usuários e tenta adicionar cada um ao grupo de destino,
         respeitando os limites de FLOOD_WAIT.
         """
-
-        safe_users_to_add = users_to_add[:8] if len(users_to_add) > 8 else users_to_add
-
         logger.info(
-            f"Tentando adicionar {len(safe_users_to_add)} usuários ao grupo ID: {target_group_id}"
+            f"Tentando adicionar {users_to_add} usuários ao grupo ID: {target_group_id}"
         )
+        try:
+            result = await self.client(
+                InviteToChannelRequest(
+                    channel=int(target_group_id), users=[users_to_add]
+                )
+            )
+            if len(result.updates.updates) == 0:
+                logger.warning("Usuario não adicionado problemas de privacidade")
+            else:
+                logger.debug(result)
+                logger.info("usuario adicionado com sucesso")
+            return True
 
-        if not safe_users_to_add:
-            logger.warning("Nenhum usuário para adicionar no lote.")
+        except FloodWaitError as e:
+            wait_time = e.seconds
+            safe_wait_time = wait_time + 5
+            logger.critical(f"FLOOD_WAIT (LOTE)! Esperando por {safe_wait_time}s.")
+            await asyncio.sleep(safe_wait_time)
             return
 
-        for user in safe_users_to_add:
-            try:
-                result = await self.client(
-                    InviteToChannelRequest(
-                        channel=int(target_group_id), users=[user]
-                    )
+        except UserPrivacyRestrictedError:
+            logger.critical(
+                "Falha (Privacidade) ao adicionar o lote: Pelo menos um usuário no lote não permite convites. Tente adicionar individualmente se for crítico."
+            )
+            await asyncio.sleep(120)  # Pausa maior devido à falha crítica
+            return
+
+        except UserNotMutualContactError:
+            logger.warning(
+                f"Usuario {users_to_add} não permite adição de contatos desconhecidos! [30 segundos]"
+            )
+            await asyncio.sleep(30)
+            return
+
+        except Exception as e:
+            wait_time = 300  # 5 minutos para erros persistentes no lote
+            logger.critical(
+                f"Erro INESPERADO ao adicionar o {users_to_add}: {e}. Aguardando {wait_time}s."
+            )
+            await asyncio.sleep(wait_time)
+            return
+
+    async def add_user_to_contact(self, user_to_add: int) -> bool:
+        logger.info(f"Adicionando {user_to_add} aos contatos")
+        try:
+            result = await self.client(
+                AddContactRequest(
+                    id=user_to_add,
+                    first_name=f"user_{os.urandom(4).hex()}",
+                    last_name="",
+                    phone="",
+                    add_phone_privacy_exception=False,
                 )
-                logger.info(
-                    f"Resposta da API para o lote/usuário: {result.stringify()}"
-                )
-
-                wait_time = 60  # 1 minuto de pausa é mais seguro para convite em lote
-                logger.info(f"Aguardando {wait_time} segundos após o convite em lote.")
-                await asyncio.sleep(wait_time)
-
-            except FloodWaitError as e:
-                wait_time = e.seconds
-                safe_wait_time = wait_time + 5
-                logger.critical(f"FLOOD_WAIT (LOTE)! Esperando por {safe_wait_time}s.")
-                await asyncio.sleep(safe_wait_time)
-
-            except UserPrivacyRestrictedError:
-                logger.critical(
-                    "Falha (Privacidade) ao adicionar o lote: Pelo menos um usuário no lote não permite convites. Tente adicionar individualmente se for crítico."
-                )
-                await asyncio.sleep(120)  # Pausa maior devido à falha crítica
-
-            except Exception as e:
-                wait_time = 300  # 5 minutos para erros persistentes no lote
-                logger.critical(
-                    f"Erro INESPERADO ao adicionar o {user}: {e}. Aguardando {wait_time}s."
-                )
-                await asyncio.sleep(wait_time)
-
-        logger.info(
-            "Processo de adição em lote concluído (Verifique o grupo para confirmação de usuários)."
-        )
+            )
+            # Verifica se o resultado possui usuários e se o primeiro usuário tem a foto com o atributo 'personal'
+            logger.debug(result)
+            logger.info("Contato adicionaod com sucesso [10 segundos]")
+            await asyncio.sleep(10)
+            return True
+        except Exception as e:
+            logger.warning(
+                f"Não foi possivel adicionar {user_to_add} aos contados pulando: {e}"
+            )
+            return

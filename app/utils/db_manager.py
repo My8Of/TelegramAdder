@@ -10,18 +10,17 @@ from app.utils.models import UserExportData, Users, dbUser
 logger = ColorLogger("TelegramDatabase")
 
 
-
 class TelegramDatabase:
     """Gerenciador de banco de dados para Telegram scraping"""
 
-    def __init__(self, host,user,password,database):
+    def __init__(self, host, user, password, database):
         self.connection = None
         self.cursor = None
         self.host = host
         self.user = user
         self.password = password
         self.database = database
-        self.connect() 
+        self.connect()
 
     def connect(self):
         """Estabelece conexão com o banco de dados"""
@@ -48,7 +47,7 @@ class TelegramDatabase:
         try:
             self.cursor.execute(
                 """
-                INSERT INTO users (id, username, first_name, last_name, is_bot)
+                INSERT IGNORE INTO users (id, username, first_name, last_name, is_bot)
                 VALUES (%s, %s, %s, %s, %s)
             """,
                 (
@@ -68,10 +67,28 @@ class TelegramDatabase:
     async def get_users(self, limit: int = 100) -> List[int]:
         """Retorna todos os usuários do banco de dados"""
         try:
-            self.cursor.execute(f"SELECT id FROM users LIMIT {limit}")
+            self.cursor.execute(
+                f"SELECT id FROM users WHERE added is NULL LIMIT {limit}"
+            )
             ids = self.cursor.fetchall()
             logger.info(f"✅ {len(ids)} usuários retornados com sucesso")
             return ids
         except Error as e:
             logger.error(f"❌ Erro ao buscar usuários: {e}")
             return []
+
+    async def check_users(self, user: int, sucess: str) -> None:
+        try:
+            # Assumindo que o objeto 'user' recebido como parâmetro contém o ID do usuário
+            # e o valor 'success' a ser atualizado na coluna 'added'.
+            # Por exemplo, user.id para o WHERE e user.added para o SET.
+            sql = "UPDATE users SET added = %s WHERE id = %s"
+            params = (sucess, user)
+
+            self.cursor.execute(sql, params)
+            self.connection.commit()
+            logger.info(
+                f"✅ Coluna 'added' do usuário {user} atualizada para '{sucess}' com sucesso."
+            )
+        except Error as e:
+            logger.error(f"❌ Erro ao atualizar coluna 'added' do usuário {user}: {e}")
