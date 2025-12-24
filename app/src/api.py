@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 from typing import Any, Dict, List
 
@@ -143,7 +142,6 @@ class TelegramManeger:
         Lê o cache de usuários e tenta adicionar cada um ao grupo de destino,
         respeitando os limites de FLOOD_WAIT.
         """
-        retry = 0
         logger.info(
             f"Tentando adicionar {len(users_to_add)} usuários ao grupo ID: {target_group_id}"
         )
@@ -151,18 +149,8 @@ class TelegramManeger:
             result = await self.client(
                 InviteToChannelRequest(channel=int(target_group_id), users=users_to_add)
             )
-            if len(result.updates.updates) == 0:
-                logger.warning("Usuario não adicionado problemas de privacidade")
-                retry += 1
-                if retry > 3:
-                    logger.critical(
-                        "⚠️ Falha ao adicionar usuário após 3 tentativas possivel timeout verifique o SPAMBOT"
-                    )
-                else:
-                    exit(1)
-            else:
-                logger.debug(result)
-                logger.info("usuario adicionado com sucesso")
+            logger.debug(result)
+            logger.info("usuario adicionado com sucesso")
             return True
 
         except FloodWaitError as e:

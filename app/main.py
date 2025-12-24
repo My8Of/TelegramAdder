@@ -72,7 +72,7 @@ async def add():
     logger.info("Starting Telegram Scraper")
     connectors: List[TelegramManeger] = []
 
-    connector_timeouts = {}
+    connector_timeouts = {i: 0 for i in range(SESSIONS + 1)}
 
     try:
         group_id_int = int(GROUP_ID) if GROUP_ID else 0
@@ -114,7 +114,7 @@ async def add():
 
         # 2. Lógica de Adição com Rodízio e Timeout
         idx = 0
-        chunks = [users_list[i : i + 5] for i in range(0, len(users_list), 5)]
+        chunks = [users_list[i : i + 3] for i in range(0, len(users_list), 3)]
 
         for user_chunk in chunks:
             success = False
