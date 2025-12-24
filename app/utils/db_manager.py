@@ -64,12 +64,10 @@ class TelegramDatabase:
             logger.error(f"❌ Erro ao salvar usuário {user.id}: {e}")
         return True
 
-    async def get_users(self, limit: int = 100) -> List[int]:
+    async def get_users(self) -> List[int]:
         """Retorna todos os usuários do banco de dados já adicionados do banco de dados"""
         try:
-            self.cursor.execute(
-                f"SELECT id FROM users WHERE added is not NULL LIMIT {limit}"
-            )
+            self.cursor.execute(f"SELECT id FROM users WHERE added is not NULL")
             users = self.cursor.fetchall()
             logger.info(f"✅ {len(users)} usuários retornados com sucesso")
             ids = []
