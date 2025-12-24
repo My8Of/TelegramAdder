@@ -111,8 +111,10 @@ async def add():
 
     try:
         # 1. Coleta inicial de membros (usando o primeiro conector apenas para o scrap)
-        async with connectors[0] as scraper:
-            users_list = await scraper.get_group_members(int(GROUP_ID))
+        for i in range(SESSIONS):
+            async with connectors[i] as scraper:
+                logger.info(f"buscando usuarios para o canal {i + 1}")
+                users_list = await scraper.get_group_members(int(GROUP_ID))
 
         ignore_list = await db.get_users()
         users_list = [u.id for u in users_list if u.id not in ignore_list]

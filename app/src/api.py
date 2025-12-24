@@ -32,7 +32,8 @@ class TelegramManeger:
             logger.critical(f"O GROUP_ID '{group_id}' não é um número válido.")
             # Você pode levantar um erro ou sair aqui
             raise
-        self.session_name = f"scraper_{abs(self.group_id_int)}"
+
+        self.session_name = f"session_{phone_number.replace('+', '')}"
 
         # O cliente Telethon é instanciado. Ele gerencia o arquivo de sessão.
         self.client = TelegramClient(
