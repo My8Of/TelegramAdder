@@ -151,16 +151,17 @@ class TelegramManeger:
             result = await self.client(
                 InviteToChannelRequest(channel=int(target_group_id), users=users_to_add)
             )
-            logger.debug(result)
             if len(result.updates.updates) == 0:
                 logger.warning("Usuario não adicionado problemas de privacidade")
                 retry += 1
-                if retry >= 3:
+                if retry > 3:
                     logger.critical(
                         "⚠️ Falha ao adicionar usuário após 3 tentativas possivel timeout verifique o SPAMBOT"
                     )
+                else:
                     exit(1)
             else:
+                logger.debug(result)
                 logger.info("usuario adicionado com sucesso")
             return True
 
