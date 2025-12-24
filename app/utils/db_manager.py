@@ -65,30 +65,33 @@ class TelegramDatabase:
         return True
 
     async def get_users(self, limit: int = 100) -> List[int]:
-        """Retorna todos os usuários do banco de dados"""
+        """Retorna todos os usuários do banco de dados já adicionados do banco de dados"""
         try:
             self.cursor.execute(
-                f"SELECT id FROM users WHERE added is NULL LIMIT {limit}"
+                f"SELECT id FROM users WHERE added is not NULL LIMIT {limit}"
             )
-            ids = self.cursor.fetchall()
-            logger.info(f"✅ {len(ids)} usuários retornados com sucesso")
+            users = self.cursor.fetchall()
+            logger.info(f"✅ {len(users)} usuários retornados com sucesso")
+            ids = []
+            for user in users:
+                ids.append(int(user["id"]))
             return ids
         except Error as e:
             logger.error(f"❌ Erro ao buscar usuários: {e}")
             return []
 
-    async def check_users(self, user: int, sucess: str) -> None:
+    async def check_users(self, users: List[int]) -> None:
         try:
-            # Assumindo que o objeto 'user' recebido como parâmetro contém o ID do usuário
-            # e o valor 'success' a ser atualizado na coluna 'added'.
-            # Por exemplo, user.id para o WHERE e user.added para o SET.
-            sql = "UPDATE users SET added = %s WHERE id = %s"
-            params = (sucess, user)
+            # The 'user' parameter is the ID of the user to update.
+            # The 'mysql.connector' expects parameters for execute to be a list, tuple, or dict.
+            # So, wrap the single integer ID in a tuple.
+            sql = "UPDATE users SET added = True WHERE id = %s"
+            params = [(user,) for user in users]  # Pass the user ID as a tuple
 
-            self.cursor.execute(sql, params)
+            self.cursor.executemany(sql, params)
             self.connection.commit()
             logger.info(
-                f"✅ Coluna 'added' do usuário {user} atualizada para '{sucess}' com sucesso."
+                f"✅ Coluna 'added' dos usuários {users} atualizada para 'True' com sucesso."
             )
         except Error as e:
             logger.error(f"❌ Erro ao atualizar coluna 'added' do usuário {user}: {e}")

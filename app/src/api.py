@@ -136,22 +136,30 @@ class TelegramManeger:
             logger.critical(f"Erro ao buscar membros do grupo: {e}")
             return []
 
-    async def add_user_to_group(self, users_to_add: int, target_group_id: int) -> bool:
+    async def add_user_to_group(
+        self, users_to_add: List[int], target_group_id: int
+    ) -> bool:
         """
         Lê o cache de usuários e tenta adicionar cada um ao grupo de destino,
         respeitando os limites de FLOOD_WAIT.
         """
+        retry = 0
         logger.info(
-            f"Tentando adicionar {users_to_add} usuários ao grupo ID: {target_group_id}"
+            f"Tentando adicionar {len(users_to_add)} usuários ao grupo ID: {target_group_id}"
         )
         try:
             result = await self.client(
-                InviteToChannelRequest(
-                    channel=int(target_group_id), users=[users_to_add]
-                )
+                InviteToChannelRequest(channel=int(target_group_id), users=users_to_add)
             )
             if len(result.updates.updates) == 0:
                 logger.warning("Usuario não adicionado problemas de privacidade")
+                retry += 1
+                if retry > 3:
+                    logger.critical(
+                        "⚠️ Falha ao adicionar usuário após 3 tentativas possivel timeout verifique o SPAMBOT"
+                    )
+                else:
+                    exit(1)
             else:
                 logger.debug(result)
                 logger.info("usuario adicionado com sucesso")
@@ -186,22 +194,24 @@ class TelegramManeger:
             await asyncio.sleep(wait_time)
             return
 
-    async def add_user_to_contact(self, user_to_add: int) -> bool:
-        logger.info(f"Adicionando {user_to_add} aos contatos")
+    async def add_user_to_contact(self, user_to_add: List[int]) -> bool:
+        logger.info(f"Adicionando {len(user_to_add)} usuarios aos contatos")
         try:
-            result = await self.client(
-                AddContactRequest(
-                    id=user_to_add,
-                    first_name=f"user_{os.urandom(4).hex()}",
-                    last_name="",
-                    phone="",
-                    add_phone_privacy_exception=False,
+            for user in user_to_add:
+                result = await self.client(
+                    AddContactRequest(
+                        id=user,
+                        first_name=f"user_{os.urandom(4).hex()}",
+                        last_name="",
+                        phone="",
+                        add_phone_privacy_exception=False,
+                    )
                 )
-            )
+                logger.debug(result)
+                logger.info("Contato adicionado com sucesso [10 segundos]")
+                await asyncio.sleep(10)
+
             # Verifica se o resultado possui usuários e se o primeiro usuário tem a foto com o atributo 'personal'
-            logger.debug(result)
-            logger.info("Contato adicionaod com sucesso [10 segundos]")
-            await asyncio.sleep(10)
             return True
         except Exception as e:
             logger.warning(
