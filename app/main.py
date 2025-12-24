@@ -89,12 +89,21 @@ async def add():
         exit()
     else:
         for i in range(SESSIONS):
-            connectors.append(
-                TelegramManeger(
-                    API_IDS[i], API_HASHES[i], PHONE_NUMBERS[i], group_id_int
-                )
+            # Log para depurar qual número está sendo usado agora
+            logger.info(
+                f"Preparando Conector {i + 1} para o número: {PHONE_NUMBERS[i]}"
             )
-            logger.info(f"Conector {i + 1}/{SESSIONS} inicializado.")
+
+            manager = TelegramManeger(
+                API_IDS[i], API_HASHES[i], PHONE_NUMBERS[i], group_id_int
+            )
+
+            # FORÇAR O START AQUI: Isso fará o terminal pedir o código do conector 1,
+            # e depois que você digitar, ele seguirá para o conector 2.
+            await manager.client.start(phone=manager.phone_number)
+
+            connectors.append(manager)
+            logger.info(f"✅ Conector {i + 1}/{SESSIONS} logado com sucesso.")
 
     if not connectors:
         logger.error("Nenhum conector disponível.")
