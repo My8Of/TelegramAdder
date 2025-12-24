@@ -25,27 +25,10 @@ LOGO = """
 """
 print(LOGO)  # O logo é impresso no logger, não no print.
 
-
-def get_env_list(key: str, is_int: bool = False):
-    raw_value = os.getenv(key, "")
-    if not raw_value:
-        return []
-
-    # Remove colchetes se o usuário insistir em colocá-los, remove espaços e dá split
-    cleaned = raw_value.replace("[", "").replace("]", "").replace(" ", "")
-    items = cleaned.split(",")
-
-    try:
-        return [int(item) for item in items] if is_int else items
-    except ValueError as e:
-        logger.error(f"Erro ao converter lista da env {key}: {e}")
-        return []
-
-
 SESSIONS = int(os.getenv("SESSIONS", 1))
-API_IDS = get_env_list("TELEGRAM_API_IDS", is_int=True)
-API_HASHES = get_env_list("TELEGRAM_API_HASHES")
-PHONE_NUMBERS = get_env_list("TELEGRAM_PHONE_NUMBERS")
+API_ID = os.getenv("TELEGRAM_API_ID", "")
+API_HASH = os.getenv("TELEGRAM_API_HASH", "")
+PHONE_NUMBER = os.getenv("TELEGRAM_PHONE_NUMBER", "")
 GROUP_ID = os.getenv("TELEGRAM_GROUP_ID")
 TARGET_GROUP_ID = os.getenv("TELEGRAM_TARGET_GROUP_ID")
 DUMMY_ID = os.getenv("DUMMY_ID")
@@ -57,118 +40,49 @@ DATABASE = os.getenv("DB_NAME")
 
 logger = ColorLogger("Main")
 
-logger.debug(API_IDS)
-logger.debug(API_HASHES)
-logger.debug(PHONE_NUMBERS)
-
 if HOST and USER and PASSWORD and DATABASE:
     db = TelegramDatabase(host=HOST, user=USER, password=PASSWORD, database=DATABASE)
 else:
     db = None
     logger.warning("Database não setada no env inciando sessão temporaria")
 
+connector = TelegramManeger(
+    api_id=API_ID, api_hash=API_HASH, phone_number=PHONE_NUMBER, group_id=GROUP_ID
+)
+
 
 async def add():
     logger.info("Starting Telegram Scraper")
-    connectors: List[TelegramManeger] = []
-
-    connector_timeouts = {}
-
-    try:
-        group_id_int = int(GROUP_ID) if GROUP_ID else 0
-    except ValueError:
-        logger.error(
-            f"TELEGRAM_GROUP_ID '{GROUP_ID}' não é um número inteiro válido. Usando 0."
-        )
-        group_id_int = 0
-
-    if SESSIONS <= 0:
-        logger.critical(
-            "SESSIONS é configurado para 0 ou menos, nenhum conector será inicializado."
-        )
-        exit()
-    else:
-        for i in range(SESSIONS):
-            connectors.append(
-                TelegramManeger(
-                    API_IDS[i], API_HASHES[i], PHONE_NUMBERS[i], group_id_int
-                )
-            )
-            logger.info(f"Conector {i + 1}/{SESSIONS} inicializado.")
-
-    if not connectors:
-        logger.error("Nenhum conector disponível.")
-        return
-
     try:
         # 1. Coleta inicial de membros (usando o primeiro conector apenas para o scrap)
-        async with connectors[0] as scraper:
+        async with connector as scraper:
             users_list = await scraper.get_group_members(int(GROUP_ID))
 
-        ignore_list = await db.get_users()
-        users_list = [u.id for u in users_list if u.id not in ignore_list]
+            ignore_list = await db.get_users()
+            logger.debug(ignore_list)
+            logger.info(f"Ignorando {len(ignore_list)} usuários já adicionados")
 
-        if not users_list:
-            logger.warning("Nenhum usuário novo para adicionar.")
-            return
+            users = [u.id for u in users_list if u.id not in ignore_list]
+            logger.debug(f"Adicionando {len(users)} novos usuários")
 
-        # 2. Lógica de Adição com Rodízio e Timeout
-        idx = 0
-        chunks = [users_list[i : i + 5] for i in range(0, len(users_list), 5)]
+            if not users:
+                logger.warning("Nenhum usuário novo para adicionar.")
+                return
 
-        for user_chunk in chunks:
-            success = False
+            chunks = [users[i : i + 3] for i in range(0, len(users), 3)]
 
-            while not success:
-                current_connector = connectors[idx]
-                now = time.time()
-
-                # Verifica se o conector atual está em cooldown
-                wait_needed = connector_timeouts[idx] - now
-                if wait_needed > 0:
-                    logger.info(
-                        f"Conector {idx} em timeout. Aguardando {int(wait_needed)}s..."
+            for user_chunk in chunks:
+                if await scraper.add_user_to_contact(user_to_add=user_chunk):
+                    await db.check_users(users=user_chunk)
+                    res = await scraper.add_user_to_group(
+                        users_to_add=user_chunk,
+                        target_group_id=int(TARGET_GROUP_ID),
                     )
-                    await asyncio.sleep(
-                        min(wait_needed, 10)
-                    )  # Espera um pouco e tenta o próximo ou o mesmo
 
-                    # Rotaciona para o próximo para verificar se algum outro está livre
-                    idx = (idx + 1) % len(connectors)
-                    continue
-
-                # Tenta realizar a operação
-                try:
-                    logger.info(f"Usando Conector [{idx}] para adicionar {user_chunk}")
-
-                    # Nota: Você precisa garantir que o connector esteja conectado.
-                    # Se o seu Maneger não gerencia o start/stop interno, use 'async with' aqui.
-                    async with current_connector as active_conn:
-                        if await active_conn.add_user_to_contact(
-                            user_to_add=user_chunk
-                        ):
-                            await db.check_users(users=user_chunk)
-                            res = await active_conn.add_user_to_group(
-                                users_to_add=user_chunk,
-                                target_group_id=int(TARGET_GROUP_ID),
-                            )
-
-                            if res:
-                                # Define o próximo desbloqueio para este conector (5 min)
-                                connector_timeouts[idx] = time.time() + 300
-                                logger.info(
-                                    f"Conector [{idx}] entrou em cooldown de 5min."
-                                )
-                                success = True
-                except Exception as e:
-                    logger.error(f"Erro no conector {idx}: {e}")
-                    # Em caso de erro (como FloodWait), você pode aumentar o timeout aqui
-                    connector_timeouts[idx] = time.time() + 600
-                    idx = (idx + 1) % len(connectors)
-                    break  # Sai do while para tentar outro chunk ou repetir este
-
-                # Passa para o próximo índice de conector para a próxima rodada
-                idx = (idx + 1) % len(connectors)
+                    if res:
+                        # Define o próximo desbloqueio para este conector (5 min)
+                        logger.info("Entrou em cooldown de 5min.")
+                        await asyncio.sleep(300)
     except Exception as e:
         logger.critical(f"Falha na execução: {e}")
 
