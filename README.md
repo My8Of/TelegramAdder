@@ -1,11 +1,5 @@
 # Telegram Scraper
 
-> ⚠️ **AVISO IMPORTANTE**
-> Este software é **100% GRATUITO** e de **CÓDIGO ABERTO**.
-> Se você pagou por este programa, **VOCÊ FOI ENGANADO**.
-> Não pague por este software em hipótese alguma.
-
-
 Este projeto é uma ferramenta para automação e extração de dados do Telegram.
 
 ## � Instalação
