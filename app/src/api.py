@@ -146,42 +146,13 @@ class TelegramManeger:
         logger.info(
             f"Tentando adicionar {len(users_to_add)} usuários ao grupo ID: {target_group_id}"
         )
-        try:
-            result = await self.client(
-                InviteToChannelRequest(channel=int(target_group_id), users=users_to_add)
-            )
-            logger.debug(result)
-            logger.info("usuario adicionado com sucesso")
-            return True
-
-        except FloodWaitError as e:
-            wait_time = e.seconds
-            safe_wait_time = wait_time + 5
-            logger.critical(f"FLOOD_WAIT (LOTE)! Esperando por {safe_wait_time}s.")
-            await asyncio.sleep(safe_wait_time)
-            return
-
-        except UserPrivacyRestrictedError:
-            logger.critical(
-                "Falha (Privacidade) ao adicionar o lote: Pelo menos um usuário no lote não permite convites. Tente adicionar individualmente se for crítico."
-            )
-            await asyncio.sleep(120)  # Pausa maior devido à falha crítica
-            return
-
-        except UserNotMutualContactError:
-            logger.warning(
-                f"Usuario {users_to_add} não permite adição de contatos desconhecidos! [30 segundos]"
-            )
-            await asyncio.sleep(30)
-            return
-
-        except Exception as e:
-            wait_time = 300  # 5 minutos para erros persistentes no lote
-            logger.critical(
-                f"Erro INESPERADO ao adicionar o {users_to_add}: {e}. Aguardando {wait_time}s."
-            )
-            await asyncio.sleep(wait_time)
-            return
+        # Removido try/except interno para permitir que o main.py gerencie os erros e timeouts
+        result = await self.client(
+            InviteToChannelRequest(channel=int(target_group_id), users=users_to_add)
+        )
+        logger.debug(result)
+        logger.info("usuario adicionado com sucesso")
+        return True
 
     async def add_user_to_contact(self, user_to_add: List[int]) -> bool:
         logger.info(f"Adicionando {len(user_to_add)} usuarios aos contatos")

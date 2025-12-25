@@ -10,6 +10,11 @@ from app.src.api import TelegramManeger
 from app.utils.db_manager import TelegramDatabase
 from app.utils.logger import ColorLogger
 from app.utils.models import dbUser
+from telethon.errors import (
+    FloodWaitError,
+    UserNotMutualContactError,
+    UserPrivacyRestrictedError,
+)
 
 load_dotenv()
 
@@ -155,6 +160,8 @@ async def add():
                     # Nota: Você precisa garantir que o connector esteja conectado.
                     # Se o seu Maneger não gerencia o start/stop interno, use 'async with' aqui.
                     async with current_connector as active_conn:
+                        # Tenta adicionar aos contatos primeiro
+                        # (Opcional: você pode querer tratar exceção aqui também se for crítico)
                         if await active_conn.add_user_to_contact(
                             user_to_add=user_chunk
                         ):
@@ -171,12 +178,37 @@ async def add():
                                     f"Conector [{idx}] entrou em cooldown de 5min."
                                 )
                                 success = True
+
+                except FloodWaitError as e:
+                    wait_time = e.seconds
+                    # Adiciona um buffer de segurança e define o timeout APENAS para este conector
+                    connector_timeouts[idx] = time.time() + wait_time + 10
+                    logger.warning(
+                        f"FLOOD_WAIT no Conector {idx}: aguardando {wait_time}s. Trocando de conector..."
+                    )
+                    # Não setamos success=True -> o while vai continuar e tentar o próximo conector
+                    idx = (idx + 1) % len(connectors)
+                    continue
+
+                except (UserPrivacyRestrictedError, UserNotMutualContactError):
+                    logger.warning(
+                        f"Privacidade restrita no chunk {user_chunk} usando Conector {idx}. Pulando chunk."
+                    )
+                    # Erro de privacidade geralmente é do usuário alvo, não do conector.
+                    # Mas vamos dar um pequeno respiro pro conector
+                    connector_timeouts[idx] = time.time() + 30
+                    success = True # Consideramos "sucesso" para sair do while e processar PRÓXIMO chunk (pular este)
+                    
                 except Exception as e:
-                    logger.error(f"Erro no conector {idx}: {e}")
-                    # Em caso de erro (como FloodWait), você pode aumentar o timeout aqui
+                    logger.error(f"Erro Genérico no conector {idx}: {e}")
+                    # Em caso de erro desconhecido, pune o conector por um tempo maior e tenta outro
                     connector_timeouts[idx] = time.time() + 600
                     idx = (idx + 1) % len(connectors)
-                    break  # Sai do while para tentar outro chunk ou repetir este
+                    # break # Sai do while para evitar loop infinito no mesmo chunk se for erro persistente de dados
+                    # Se quisermos tentar o mesmo chunk com OUTRO conector, usamos continue.
+                    # Se achamos que o chunk está "viciado" (dados ruins), usamos break ou success=True.
+                    # Vou assumir que queremos tentar com outro conector:
+                    continue
 
                 # Passa para o próximo índice de conector para a próxima rodada
                 idx = (idx + 1) % len(connectors)
