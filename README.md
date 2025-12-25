@@ -40,6 +40,32 @@ Para executar o projeto, você precisa configurar as variáveis de ambiente. Ren
 - **TELEGRAM_PHONE_NUMBER**: Seu número de telefone conectado à conta do Telegram (formato internacional, ex: +5511999999999).
 - **TELEGRAM_GROUP_ID**: ID do grupo de origem (se aplicável).
 - **TELEGRAM_TARGET_GROUP_ID**: ID do grupo de destino (se aplicável).
+- **DB_HOST**: Host do banco de dados (ex: localhost ou nome do serviço no docker-compose).
+- **DB_USER**: Usuário do banco de dados.
+- **DB_PASSWORD**: Senha do banco de dados.
+- **DB_NAME**: Nome da database.
+
+## 🗄️ Configuração do Banco de Dados (Local)
+
+Para rodar um banco de dados MySQL localmente usando Docker, execute:
+
+```bash
+docker run --name telegram_db \
+  -e MYSQL_ROOT_PASSWORD=rootpassword \
+  -e MYSQL_DATABASE=telegram_adder \
+  -e MYSQL_USER=user \
+  -e MYSQL_PASSWORD=password \
+  -p 3306:3306 \
+  -d mysql:8.0
+```
+
+Certifique-se de configurar seu `.env` com os valores correspondentes:
+```env
+DB_HOST=localhost
+DB_USER=user
+DB_PASSWORD=password
+DB_NAME=telegram_adder
+```
 
 ## 🐳 Como Rodar com Docker
 

@@ -34,12 +34,33 @@ class TelegramDatabase:
                 collation="utf8mb4_unicode_ci",
             )
             self.cursor = self.connection.cursor(dictionary=True)
+            self.create_db_structure()
             logger.info("✅ Conectado ao banco de dados")
-            # Auto-cria tabelas se não existirem
             return True
         except Error as e:
             logger.error(f"❌ Erro ao conectar ao banco: {e}")
             return False
+
+    def create_db_structure(self):
+        """Cria a estrutura do banco de dados se não existir"""
+        try:
+            self.cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id VARCHAR(255) PRIMARY KEY,
+                    username VARCHAR(255),
+                    first_name VARCHAR(255),
+                    last_name VARCHAR(255),
+                    is_bot BOOLEAN,
+                    added BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            self.connection.commit()
+            logger.info("✅ Tabela 'users' verificada/criada com sucesso.")
+        except Error as e:
+            logger.error(f"❌ Erro ao criar estrutura do banco: {e}")
 
     async def save_user(self, user: dbUser):
         """Salva um usuário no banco de dados"""
